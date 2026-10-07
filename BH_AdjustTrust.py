@@ -118,7 +118,7 @@ def main():
         saida = entrada.with_name(entrada.stem + "-fixed.zip")
         with zipfile.ZipFile(entrada, "r") as zin, zipfile.ZipFile(saida, "w", zipfile.ZIP_DEFLATED) as zout:
             for info in zin.infolist():
-                raw = zin.read(info.name)
+                raw = zin.read(info.filename)
                 if info.filename.lower().endswith("domains.json"):
                     dados, total = processa_json(raw)
                     total_geral += total
