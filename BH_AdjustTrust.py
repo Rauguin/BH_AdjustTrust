@@ -9,14 +9,16 @@ Sem este ajuste, importar resulta em:
 Este script transforma os campos numericos para o formato esperado pelo CE.
 
 Uso:
-  BH_AdjustTrust.py <arquivo_domains.json>
+  BH_AdjustTrust.py <arquivo_domains.json ou bloodhound.zip>
 
 Gera:
-  <arquivo_domains>-fixed.json
+  <arquivo_domains>-fixed.json   (se JSON)
+  <arquivo>-fixed.zip            (se ZIP, com todos os arquivos originais)
 """
 
 import json
 import sys
+import zipfile
 from pathlib import Path
 
 # LDAP trustDirection -> label do BloodHound CE
@@ -85,15 +87,9 @@ def ajusta_trust(trust, dominio):
     return mudancas
 
 
-def main():
-    if len(sys.argv) != 2:
-        sys.exit(f"uso: python {Path(sys.argv[0]).name} <arquivo_domains.json>")
-
-    entrada = Path(sys.argv[1])
-    if not entrada.is_file():
-        sys.exit(f"[-] arquivo nao encontrado: {entrada}")
-
-    dados = json.loads(entrada.read_text(encoding="utf-8-sig"))
+def processa_json(raw: bytes):
+    texto = raw.decode("utf-8-sig")
+    dados = json.loads(texto)
     dominios = dados["data"] if isinstance(dados, dict) else dados
 
     total = 0
@@ -106,14 +102,44 @@ def main():
                 alvo = trust.get("TargetDomainName", "?")
                 print(f"[+] {nome} -> {alvo}: " + ", ".join(mudancas))
 
-    saida = entrada.with_name(entrada.stem + "-fixed.json")
-    saida.write_text(json.dumps(dados), encoding="utf-8")
+    return dados, total
 
-    if total:
-        print(f"[*] {total} trust(s) corrigido(s)")
+
+def main():
+    if len(sys.argv) != 2:
+        sys.exit(f"uso: python {Path(sys.argv[0]).name} <arquivo_domains.json ou bloodhound.zip>")
+
+    entrada = Path(sys.argv[1])
+    if not entrada.is_file():
+        sys.exit(f"[-] arquivo nao encontrado: {entrada}")
+
+    if zipfile.is_zipfile(entrada):
+        total_geral = 0
+        saida = entrada.with_name(entrada.stem + "-fixed.zip")
+        with zipfile.ZipFile(entrada, "r") as zin, zipfile.ZipFile(saida, "w", zipfile.ZIP_DEFLATED) as zout:
+            for info in zin.infolist():
+                raw = zin.read(info.name)
+                if info.filename.lower().endswith("domains.json"):
+                    dados, total = processa_json(raw)
+                    total_geral += total
+                    zout.writestr(info, json.dumps(dados).encode("utf-8"))
+                else:
+                    zout.writestr(info, raw)
+        if total_geral:
+            print(f"[*] {total_geral} trust(s) corrigido(s)")
+        else:
+            print("[*] nenhum campo numerico encontrado (arquivo ja estava ok)")
+        print(f"[*] gravado: {saida}")
     else:
-        print("[*] nenhum campo numerico encontrado (arquivo ja estava ok)")
-    print(f"[*] gravado: {saida}")
+        raw = entrada.read_bytes()
+        dados, total = processa_json(raw)
+        saida = entrada.with_name(entrada.stem + "-fixed.json")
+        saida.write_text(json.dumps(dados), encoding="utf-8")
+        if total:
+            print(f"[*] {total} trust(s) corrigido(s)")
+        else:
+            print("[*] nenhum campo numerico encontrado (arquivo ja estava ok)")
+        print(f"[*] gravado: {saida}")
 
 
 if __name__ == "__main__":
